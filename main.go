@@ -145,7 +145,7 @@ func runCommandAt(path string, cmdName string, args ...string) error {
 }
 
 func buildAndroid(path string) error {
-	if err := runCommandAt(path, "gradlew.bat", "assembleDebug"); err != nil {
+	if err := runCommandAt(path, "gradlew", "assembleDebug"); err != nil {
 		return fmt.Errorf("build Android project fail %w", err)
 	}
 	return nil
