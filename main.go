@@ -320,10 +320,11 @@ func main1() error {
 
 func main() {
 	if _, err := flags.ParseArgs(&opts, os.Args); err != nil {
-		panic(err)
+		return
 	}
 
 	if err := main1(); err != nil {
 		logError(err.Error())
+		return
 	}
 }
