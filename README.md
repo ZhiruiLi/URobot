@@ -1,4 +1,4 @@
-# transup: Compile and Copy Andorid Plugin to Unity Project
+# transup: Compile Android Plugin for Unity
 
 ## Quick Start
 
