@@ -1,4 +1,4 @@
-module github.com/zhiruili/urobot
+module github.com/zhiruili/uacp
 
 go 1.16
 
