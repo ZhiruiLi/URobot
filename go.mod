@@ -1,4 +1,4 @@
-module com.github/zhiruili/urobot
+module github.com/zhiruili/urobot
 
 go 1.16
 
