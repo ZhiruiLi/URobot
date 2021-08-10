@@ -14,52 +14,6 @@ import (
 	"github.com/jessevdk/go-flags"
 )
 
-func unzip(srcFile, dstDir string) error {
-	archive, err := zip.OpenReader(srcFile)
-	if err != nil {
-		panic(err)
-	}
-	defer archive.Close()
-
-	for _, f := range archive.File {
-		filePath := filepath.Join(dstDir, f.Name)
-
-		if !strings.HasPrefix(filePath, filepath.Clean(dstDir)+string(os.PathSeparator)) {
-			return fmt.Errorf("invalid file path")
-		}
-
-		if f.FileInfo().IsDir() {
-			logTrace("creating directory %s ...", filePath)
-			os.MkdirAll(filePath, os.ModePerm)
-			continue
-		}
-
-		logTrace("unzipping file %s ...", filePath)
-
-		if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-			return err
-		}
-
-		dstFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
-
-		fileInArchive, err := f.Open()
-		if err != nil {
-			return err
-		}
-
-		if _, err := io.Copy(dstFile, fileInArchive); err != nil {
-			return err
-		}
-
-		dstFile.Close()
-		fileInArchive.Close()
-	}
-	return nil
-}
-
 type options struct {
 	// Slice of bool will append 'true' each time the option is encountered (can be set multiple times, like -vvv)
 	Verbose            []bool `short:"v" long:"verbose" description:"Show verbose debug information"`
@@ -67,6 +21,7 @@ type options struct {
 	AndroidProjectPath string `short:"a" long:"android-path" description:"Android project path" required:"true"`
 	UnityProjectPath   string `short:"u" long:"unity-path" description:"Unity project path" required:"true"`
 	EntryActivity      string `short:"e" long:"entry-activity" description:"Full name of entry activity " required:"true"`
+	BackupExtension    string `short:"B" long:"backup-ext" description:"Keep the original files with the given ext name" required:"false"`
 }
 
 var opts options
@@ -216,9 +171,31 @@ func makeDir(path string, deleteOrigin bool) error {
 	return os.Mkdir(path, os.ModePerm)
 }
 
-func addPropertiesFile(dir string) error {
+func renameIfExist(path, newPath string) error {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+
+	if err := os.RemoveAll(newPath); err != nil {
+		return err
+	}
+
+	return os.Rename(path, newPath)
+}
+
+func backupAndWriteFile(path string, content []byte, backupExt string) error {
+	if err := removeOrBackup(path, backupExt); err != nil {
+		return err
+	}
+	return ioutil.WriteFile(path, content, 0644)
+}
+
+func addPropertiesFile(dir string, backupExt string) error {
 	path := filepath.Join(dir, "project.properties")
-	return ioutil.WriteFile(path, []byte("android.library=true"), 0644)
+	return backupAndWriteFile(path, []byte("android.library=true"), backupExt)
 }
 
 const manifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
@@ -251,10 +228,77 @@ const manifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
     </application>
 </manifest>`
 
-func addAndroidManifestFile(dir string, entryActivity string) error {
+func addAndroidManifestFile(dir string, entryActivity string, backupExt string) error {
 	var xml = strings.ReplaceAll(manifestTemplate, "${ACTIVITY_NAME}", entryActivity)
 	path := filepath.Join(dir, "AndroidManifest.xml")
-	return ioutil.WriteFile(path, []byte(xml), 0644)
+	return backupAndWriteFile(path, []byte(xml), backupExt)
+}
+
+func unzip(srcFile, dstDir string) error {
+	archive, err := zip.OpenReader(srcFile)
+	if err != nil {
+		panic(err)
+	}
+	defer archive.Close()
+
+	for _, f := range archive.File {
+		filePath := filepath.Join(dstDir, f.Name)
+
+		if !strings.HasPrefix(filePath, filepath.Clean(dstDir)+string(os.PathSeparator)) {
+			return fmt.Errorf("invalid file path")
+		}
+
+		if f.FileInfo().IsDir() {
+			logTrace("creating directory %s ...", filePath)
+			os.MkdirAll(filePath, os.ModePerm)
+			continue
+		}
+
+		logTrace("unzipping file %s ...", filePath)
+
+		if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+			return err
+		}
+
+		dstFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+
+		fileInArchive, err := f.Open()
+		if err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(dstFile, fileInArchive); err != nil {
+			return err
+		}
+
+		dstFile.Close()
+		fileInArchive.Close()
+	}
+	return nil
+}
+
+func removeOrBackup(path string, backupExt string) error {
+	if len(backupExt) > 0 {
+		bpath := path + backupExt
+		if err := renameIfExist(path, bpath); err != nil {
+			return fmt.Errorf("backup %s: %w", path, err)
+		}
+	} else {
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("delete %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func cleanAndUnzipFile(srcFile, dstDir string, backupExt string) error {
+	if err := removeOrBackup(dstDir, backupExt); err != nil {
+		return err
+	}
+	return unzip(srcFile, dstDir)
 }
 
 func main1() error {
@@ -301,17 +345,17 @@ func main1() error {
 	logTrace("Android current plugin directory at: %s", opts.currentPluginDir())
 
 	logTrace("start unzipping aar ...")
-	if err := unzip(opts.moduleAarFile(), opts.currentPluginDir()); err != nil {
+	if err := cleanAndUnzipFile(opts.moduleAarFile(), opts.currentPluginDir(), opts.BackupExtension); err != nil {
 		return err
 	}
 
 	logTrace("start generating properties file ...")
-	if err := addPropertiesFile(opts.currentPluginDir()); err != nil {
+	if err := addPropertiesFile(opts.currentPluginDir(), opts.BackupExtension); err != nil {
 		return err
 	}
 
 	logTrace("start generating Android manifest file ...")
-	if err := addAndroidManifestFile(opts.pluginBaseDir(), opts.EntryActivity); err != nil {
+	if err := addAndroidManifestFile(opts.pluginBaseDir(), opts.EntryActivity, opts.BackupExtension); err != nil {
 		return err
 	}
 
