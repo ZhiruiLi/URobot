@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -10,18 +11,21 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/jessevdk/go-flags"
 )
 
 type options struct {
 	// Slice of bool will append 'true' each time the option is encountered (can be set multiple times, like -vvv)
-	Verbose            []bool `short:"v" long:"verbose" description:"Show verbose debug information"`
-	ModuleName         string `short:"m" long:"module-name" description:"Android module name" required:"true"`
-	AndroidProjectPath string `short:"a" long:"android-path" description:"Android project path" required:"true"`
-	UnityProjectPath   string `short:"u" long:"unity-path" description:"Unity project path" required:"true"`
-	EntryActivity      string `short:"e" long:"entry-activity" description:"Full name of entry activity " required:"true"`
-	BackupExtension    string `short:"B" long:"backup-ext" description:"Keep the original files with the given ext name" required:"false"`
+	Verbose            []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
+	ModuleName         string   `short:"m" long:"module-name" env:"UACP_MODULE_NAME" description:"Android module name" required:"true"`
+	AndroidProjectPath string   `short:"a" long:"android-path" env:"UACP_ANDROID_PROJECT_PATH" description:"Android project path" required:"true"`
+	UnityProjectPath   string   `short:"u" long:"unity-path" env:"UACP_UNITY_PROJECT_PATH" description:"Unity project path" required:"true"`
+	EntryActivity      string   `short:"e" long:"entry-activity" env:"UACP_ENTRY_ACTIVITY" description:"Full name of entry activity " required:"true"`
+	AcquirePermissions []string `short:"p" long:"acquire-permissions" env:"UACP_ACQUIRE_PERMISSIONS" description:"Acquire permissions in Android manifest" required:"false"`
+	ManifestTemplate   string   `short:"T" long:"manifest-template" env:"UACP_MANIFEST_TEMPLATE" description:"Android manifest template file path" required:"false"`
+	BackupExtension    string   `short:"B" long:"backup-ext" description:"Keep the original files with the given ext name" required:"false"`
 }
 
 var opts options
@@ -198,7 +202,7 @@ func addPropertiesFile(dir string, backupExt string) error {
 	return backupAndWriteFile(path, []byte("android.library=true"), backupExt)
 }
 
-const manifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
+const defaultManifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.unity3d.player"
@@ -211,13 +215,16 @@ const manifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
         android:largeScreens="true"
         android:xlargeScreens="true"
         android:anyDensity="true"/>
+{{range .AcquirePermissions}}
+    <uses-permission android:name="{{.}}" />
+{{- end}}
 
     <application
         android:theme="@style/UnityThemeSelector"
         android:icon="@drawable/app_icon"
         android:label="@string/app_name"
         android:debuggable="true">
-        <activity android:name="${ACTIVITY_NAME}"
+        <activity android:name="{{.EntryActivity}}"
                   android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -228,10 +235,32 @@ const manifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
     </application>
 </manifest>`
 
-func addAndroidManifestFile(dir string, entryActivity string, backupExt string) error {
-	var xml = strings.ReplaceAll(manifestTemplate, "${ACTIVITY_NAME}", entryActivity)
+func loadManifestTemplateContent(path string) (string, error) {
+	if path == "" {
+		return defaultManifestTemplate, nil
+	}
+	bs, err := ioutil.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(bs), nil
+}
+
+func loadManifestTemplate(path string) (*template.Template, error) {
+	content, err := loadManifestTemplateContent(path)
+	if err != nil {
+		return nil, err
+	}
+	name := "DefaultManifest"
+	if path != "" {
+		name = "Manifest:" + path
+	}
+	return template.New(name).Parse(content)
+}
+
+func addAndroidManifestFile(dir string, content []byte, backupExt string) error {
 	path := filepath.Join(dir, "AndroidManifest.xml")
-	return backupAndWriteFile(path, []byte(xml), backupExt)
+	return backupAndWriteFile(path, content, backupExt)
 }
 
 func unzip(srcFile, dstDir string) error {
@@ -325,6 +354,15 @@ func main1() error {
 	}
 	logTrace("Unity project at: %s", opts.UnityProjectPath)
 
+	tmpl, err := loadManifestTemplate(opts.ManifestTemplate)
+	if err != nil {
+		return fmt.Errorf("Android manifest template load fail: %w", err)
+	}
+	var manifestBuf bytes.Buffer
+	if err := tmpl.Execute(&manifestBuf, opts); err != nil {
+		return fmt.Errorf("Andoird manifest generate fail: %w", err)
+	}
+
 	logTrace("start building Android project ...")
 	if err := buildAndroid(opts.AndroidProjectPath); err != nil {
 		return err
@@ -355,7 +393,7 @@ func main1() error {
 	}
 
 	logTrace("start generating Android manifest file ...")
-	if err := addAndroidManifestFile(opts.pluginBaseDir(), opts.EntryActivity, opts.BackupExtension); err != nil {
+	if err := addAndroidManifestFile(opts.pluginBaseDir(), manifestBuf.Bytes(), opts.BackupExtension); err != nil {
 		return err
 	}
 
