@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,12 +29,12 @@ func unzip(srcFile, dstDir string) error {
 		}
 
 		if f.FileInfo().IsDir() {
-			tracef("creating directory %s ...\n", filePath)
+			logTrace("creating directory %s ...", filePath)
 			os.MkdirAll(filePath, os.ModePerm)
 			continue
 		}
 
-		tracef("unzipping file %s ...\n", filePath)
+		logTrace("unzipping file %s ...", filePath)
 
 		if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
 			return err
@@ -70,12 +71,12 @@ type options struct {
 
 var opts options
 
-func (o *options) unityAndroidPluginBaseDir() string {
+func (o *options) pluginBaseDir() string {
 	return filepath.Join(o.UnityProjectPath, "Plugins", "Android")
 }
 
 func (o *options) currentPluginDir() string {
-	return filepath.Join(o.unityAndroidPluginBaseDir(), opts.ModuleName)
+	return filepath.Join(o.pluginBaseDir(), opts.ModuleName)
 }
 
 func (o *options) moduleDir() string {
@@ -112,6 +113,25 @@ func tracef(f string, a ...interface{}) {
 	if opts.isVerbose() {
 		fmt.Printf(f, a...)
 	}
+}
+
+func logTrace(f string, a ...interface{}) {
+	tracef(f+"\n", a...)
+}
+
+func logDebug(f string, a ...interface{}) {
+	debugf(f+"\n", a...)
+}
+
+func logError(f string, a ...interface{}) {
+	errorf(f+"\n", a...)
+}
+
+type funcWriter func(f string, a ...interface{})
+
+func (f funcWriter) Write(data []byte) (n int, err error) {
+	f("%s", string(data))
+	return len(data), nil
 }
 
 func setAbsPath(tag string, path *string) error {
@@ -157,20 +177,22 @@ func checkDirExist(path string) error {
 	return nil
 }
 
-func buildAndroid(path string) error {
+func runCommandAt(path string, cmdName string, args ...string) error {
 	if cwd, err := chdir(path); err != nil {
 		return err
 	} else {
 		defer chdir(cwd)
 	}
+	cmd := exec.Command(cmdName, args...)
+	cmd.Stdout = funcWriter(debugf)
+	cmd.Stderr = funcWriter(errorf)
+	return cmd.Run()
+}
 
-	buildCmd := exec.Command("gradlew.bat", "assembleDebug")
-	output, err := buildCmd.CombinedOutput()
-	errorf("%s", string(output))
-	if err != nil {
+func buildAndroid(path string) error {
+	if err := runCommandAt(path, "gradlew.bat", "assembleDebug"); err != nil {
 		return fmt.Errorf("build Android project fail %w", err)
 	}
-
 	return nil
 }
 
@@ -178,7 +200,7 @@ func makeDir(path string, deleteOrigin bool) error {
 	stat, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return os.Mkdir(path, os.ModePerm)
+			return os.MkdirAll(path, os.ModePerm)
 		}
 		return err
 	}
@@ -194,6 +216,47 @@ func makeDir(path string, deleteOrigin bool) error {
 	return os.Mkdir(path, os.ModePerm)
 }
 
+func addPropertiesFile(dir string) error {
+	path := filepath.Join(dir, "project.properties")
+	return ioutil.WriteFile(path, []byte("android.library=true"), 0644)
+}
+
+const manifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.unity3d.player"
+    android:installLocation="preferExternal"
+    android:versionCode="1"
+    android:versionName="1.0">
+    <supports-screens
+        android:smallScreens="true"
+        android:normalScreens="true"
+        android:largeScreens="true"
+        android:xlargeScreens="true"
+        android:anyDensity="true"/>
+
+    <application
+        android:theme="@style/UnityThemeSelector"
+        android:icon="@drawable/app_icon"
+        android:label="@string/app_name"
+        android:debuggable="true">
+        <activity android:name="${ACTIVITY_NAME}"
+                  android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+        </activity>
+    </application>
+</manifest>`
+
+func addAndroidManifestFile(dir string, entryActivity string) error {
+	var xml = strings.ReplaceAll(manifestTemplate, "${ACTIVITY_NAME}", entryActivity)
+	path := filepath.Join(dir, "AndroidManifest.xml")
+	return ioutil.WriteFile(path, []byte(xml), 0644)
+}
+
 func main1() error {
 	if err := setAbsPath("Android project", &opts.AndroidProjectPath); err != nil {
 		return err
@@ -206,32 +269,49 @@ func main1() error {
 	if err := checkDirExist(opts.AndroidProjectPath); err != nil {
 		return fmt.Errorf("Android project no found: %w", err)
 	}
-
-	if err := checkDirExist(opts.UnityProjectPath); err != nil {
-		return fmt.Errorf("Unity project no found: %w", err)
-	}
+	logTrace("Android project at: %s", opts.AndroidProjectPath)
 
 	if err := checkDirExist(opts.moduleDir()); err != nil {
 		return fmt.Errorf("module %s no found: %w", opts.ModuleName, err)
 	}
+	logTrace("Module %s project at: %s", opts.ModuleName, opts.moduleDir())
 
+	if err := checkDirExist(opts.UnityProjectPath); err != nil {
+		return fmt.Errorf("Unity project no found: %w", err)
+	}
+	logTrace("Unity project at: %s", opts.UnityProjectPath)
+
+	logTrace("start building Android project ...")
 	if err := buildAndroid(opts.AndroidProjectPath); err != nil {
 		return err
 	}
 
 	if err := checkFileExist(opts.moduleAarFile()); err != nil {
-		return err
+		return fmt.Errorf("Android build result no found: %w", err)
 	}
 
-	if err := makeDir(opts.unityAndroidPluginBaseDir(), false); err != nil {
+	if err := makeDir(opts.pluginBaseDir(), false); err != nil {
 		return err
 	}
+	logTrace("Android plugin base directory at: %s", opts.pluginBaseDir())
 
 	if err := makeDir(opts.currentPluginDir(), true); err != nil {
 		return err
 	}
+	logTrace("Android current plugin directory at: %s", opts.currentPluginDir())
 
+	logTrace("start unzipping aar ...")
 	if err := unzip(opts.moduleAarFile(), opts.currentPluginDir()); err != nil {
+		return err
+	}
+
+	logTrace("start generating properties file ...")
+	if err := addPropertiesFile(opts.currentPluginDir()); err != nil {
+		return err
+	}
+
+	logTrace("start generating Android manifest file ...")
+	if err := addAndroidManifestFile(opts.pluginBaseDir(), opts.EntryActivity); err != nil {
 		return err
 	}
 
@@ -244,7 +324,6 @@ func main() {
 	}
 
 	if err := main1(); err != nil {
-		fmt.Println(err.Error())
+		logError(err.Error())
 	}
-
 }
