@@ -1,4 +1,4 @@
-module github.com/zhiruili/uacp
+module github.com/zhiruili/transup
 
 go 1.16
 
