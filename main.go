@@ -72,7 +72,7 @@ type options struct {
 var opts options
 
 func (o *options) pluginBaseDir() string {
-	return filepath.Join(o.UnityProjectPath, "Plugins", "Android")
+	return filepath.Join(o.UnityProjectPath, "Assets", "Plugins", "Android")
 }
 
 func (o *options) currentPluginDir() string {
