@@ -215,7 +215,7 @@ const defaultManifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
         android:largeScreens="true"
         android:xlargeScreens="true"
         android:anyDensity="true"/>
-{{range .AcquirePermissions}}
+{{range .AndroidPermissions}}
     <uses-permission android:name="{{.}}" />
 {{- end}}
 
@@ -224,7 +224,7 @@ const defaultManifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
         android:icon="@drawable/app_icon"
         android:label="@string/app_name"
         android:debuggable="true">
-        <activity android:name="{{.EntryActivity}}"
+        <activity android:name="{{.AndroidEntryActivity}}"
                   android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
