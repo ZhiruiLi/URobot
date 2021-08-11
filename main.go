@@ -18,14 +18,14 @@ import (
 
 type options struct {
 	// Slice of bool will append 'true' each time the option is encountered (can be set multiple times, like -vvv)
-	Verbose            []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
-	ModuleName         string   `short:"m" long:"module-name" env:"UACP_MODULE_NAME" description:"Android module name" required:"true"`
-	AndroidProjectPath string   `short:"a" long:"android-path" env:"UACP_ANDROID_PROJECT_PATH" description:"Android project path" required:"true"`
-	UnityProjectPath   string   `short:"u" long:"unity-path" env:"UACP_UNITY_PROJECT_PATH" description:"Unity project path" required:"true"`
-	EntryActivity      string   `short:"e" long:"entry-activity" env:"UACP_ENTRY_ACTIVITY" description:"Full name of entry activity " required:"true"`
-	AcquirePermissions []string `short:"p" long:"acquire-permissions" env:"UACP_ACQUIRE_PERMISSIONS" description:"Acquire permissions in Android manifest" required:"false"`
-	ManifestTemplate   string   `short:"T" long:"manifest-template" env:"UACP_MANIFEST_TEMPLATE" description:"Android manifest template file path" required:"false"`
-	BackupExtension    string   `short:"B" long:"backup-ext" description:"Keep the original files with the given ext name" required:"false"`
+	Verbose                 []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
+	AndroidModuleName       string   `short:"m" long:"android-module-name" env:"UPACK_ANDROID_MODULE_NAME" description:"Android module name" required:"true"`
+	AndroidProjectPath      string   `short:"a" long:"android-path" env:"UPACK_ANDROID_PROJECT_PATH" description:"Android project path" required:"true"`
+	UnityProjectPath        string   `short:"u" long:"unity-path" env:"UPACK_UNITY_PROJECT_PATH" description:"Unity project path" required:"true"`
+	AndroidEntryActivity    string   `short:"e" long:"entry-activity" env:"UPACK_ENTRY_ACTIVITY" description:"Full name of entry activity " required:"true"`
+	AndroidPermissions      []string `short:"p" long:"android-permissions" env:"UPACK_ANDROID_PERMISSIONS" description:"Acquire permissions in Android manifest" required:"false"`
+	AndroidManifestTemplate string   `short:"T" long:"manifest-template" env:"UPACK_MANIFEST_TEMPLATE" description:"Android manifest template file path" required:"false"`
+	BackupExtension         string   `short:"B" long:"backup-extension" env:"UPACK_BACKUP_EXTENSION" description:"Keep the original files with the given ext name" required:"false"`
 }
 
 var opts options
@@ -35,11 +35,11 @@ func (o *options) pluginBaseDir() string {
 }
 
 func (o *options) currentPluginDir() string {
-	return filepath.Join(o.pluginBaseDir(), opts.ModuleName)
+	return filepath.Join(o.pluginBaseDir(), opts.AndroidModuleName)
 }
 
 func (o *options) moduleDir() string {
-	return filepath.Join(o.AndroidProjectPath, o.ModuleName)
+	return filepath.Join(o.AndroidProjectPath, o.AndroidModuleName)
 }
 
 func (o *options) moduleAarDir() string {
@@ -47,7 +47,7 @@ func (o *options) moduleAarDir() string {
 }
 
 func (o *options) moduleAarFile() string {
-	return filepath.Join(o.moduleAarDir(), fmt.Sprintf("%s-%s.aar", o.ModuleName, "debug"))
+	return filepath.Join(o.moduleAarDir(), fmt.Sprintf("%s-%s.aar", o.AndroidModuleName, "debug"))
 }
 
 func (o *options) isDebug() bool {
@@ -345,16 +345,16 @@ func main1() error {
 	logTrace("Android project at: %s", opts.AndroidProjectPath)
 
 	if err := checkDirExist(opts.moduleDir()); err != nil {
-		return fmt.Errorf("module %s no found: %w", opts.ModuleName, err)
+		return fmt.Errorf("module %s no found: %w", opts.AndroidModuleName, err)
 	}
-	logTrace("Module %s project at: %s", opts.ModuleName, opts.moduleDir())
+	logTrace("Module %s project at: %s", opts.AndroidModuleName, opts.moduleDir())
 
 	if err := checkDirExist(opts.UnityProjectPath); err != nil {
 		return fmt.Errorf("Unity project no found: %w", err)
 	}
 	logTrace("Unity project at: %s", opts.UnityProjectPath)
 
-	tmpl, err := loadManifestTemplate(opts.ManifestTemplate)
+	tmpl, err := loadManifestTemplate(opts.AndroidManifestTemplate)
 	if err != nil {
 		return fmt.Errorf("Android manifest template load fail: %w", err)
 	}
