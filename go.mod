@@ -1,4 +1,4 @@
-module github.com/zhiruili/transup
+module github.com/zhiruili/upack
 
 go 1.16
 
