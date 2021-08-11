@@ -21,7 +21,6 @@ type options struct {
 	Verbose                 []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
 	AndroidModuleName       string   `short:"m" long:"android-module-name" env:"UPACK_ANDROID_MODULE_NAME" description:"Android module name" required:"true"`
 	AndroidProjectPath      string   `short:"a" long:"android-path" env:"UPACK_ANDROID_PROJECT_PATH" description:"Android project path" required:"true"`
-	UnityProjectPath        string   `short:"u" long:"unity-path" env:"UPACK_UNITY_PROJECT_PATH" description:"Unity project path" required:"true"`
 	AndroidEntryActivity    string   `short:"e" long:"entry-activity" env:"UPACK_ENTRY_ACTIVITY" description:"Full name of entry activity " required:"true"`
 	AndroidPermissions      []string `short:"p" long:"android-permissions" env:"UPACK_ANDROID_PERMISSIONS" description:"Acquire permissions in Android manifest" required:"false"`
 	AndroidManifestTemplate string   `short:"T" long:"manifest-template" env:"UPACK_MANIFEST_TEMPLATE" description:"Android manifest template file path" required:"false"`
@@ -29,14 +28,6 @@ type options struct {
 }
 
 var opts options
-
-func (o *options) pluginBaseDir() string {
-	return filepath.Join(o.UnityProjectPath, "Assets", "Plugins", "Android")
-}
-
-func (o *options) currentPluginDir() string {
-	return filepath.Join(o.pluginBaseDir(), opts.AndroidModuleName)
-}
 
 func (o *options) moduleDir() string {
 	return filepath.Join(o.AndroidProjectPath, o.AndroidModuleName)
@@ -330,13 +321,16 @@ func cleanAndUnzipFile(srcFile, dstDir string, backupExt string) error {
 	return unzip(srcFile, dstDir)
 }
 
-func main1() error {
+func main1(args []string) error {
 	if err := setAbsPath("Android project", &opts.AndroidProjectPath); err != nil {
 		return err
 	}
 
-	if err := setAbsPath("Unity project", &opts.UnityProjectPath); err != nil {
-		return err
+	for i := range args {
+		if err := setAbsPath("Output directory", &args[i]); err != nil {
+			return err
+		}
+		logDebug("plugin ouput directory: %s", args[i])
 	}
 
 	if err := checkDirExist(opts.AndroidProjectPath); err != nil {
@@ -348,11 +342,6 @@ func main1() error {
 		return fmt.Errorf("module %s no found: %w", opts.AndroidModuleName, err)
 	}
 	logTrace("Module %s project at: %s", opts.AndroidModuleName, opts.moduleDir())
-
-	if err := checkDirExist(opts.UnityProjectPath); err != nil {
-		return fmt.Errorf("Unity project no found: %w", err)
-	}
-	logTrace("Unity project at: %s", opts.UnityProjectPath)
 
 	tmpl, err := loadManifestTemplate(opts.AndroidManifestTemplate)
 	if err != nil {
@@ -372,40 +361,46 @@ func main1() error {
 		return fmt.Errorf("Android build result no found: %w", err)
 	}
 
-	if err := makeDir(opts.pluginBaseDir(), false); err != nil {
-		return err
-	}
-	logTrace("Android plugin base directory at: %s", opts.pluginBaseDir())
+	for _, baseDir := range args {
 
-	if err := makeDir(opts.currentPluginDir(), true); err != nil {
-		return err
-	}
-	logTrace("Android current plugin directory at: %s", opts.currentPluginDir())
+		plugDir := filepath.Join(baseDir, opts.AndroidModuleName)
+		if err := makeDir(plugDir, true); err != nil {
+			return err
+		}
+		logDebug("Android plugin output directory at: %s", plugDir)
 
-	logTrace("start unzipping aar ...")
-	if err := cleanAndUnzipFile(opts.moduleAarFile(), opts.currentPluginDir(), opts.BackupExtension); err != nil {
-		return err
-	}
+		logTrace("start unzipping aar to %s ...", plugDir)
+		if err := cleanAndUnzipFile(opts.moduleAarFile(), plugDir, opts.BackupExtension); err != nil {
+			return err
+		}
 
-	logTrace("start generating properties file ...")
-	if err := addPropertiesFile(opts.currentPluginDir(), opts.BackupExtension); err != nil {
-		return err
-	}
+		logTrace("start generating properties file at %s ...", plugDir)
+		if err := addPropertiesFile(plugDir, opts.BackupExtension); err != nil {
+			return err
+		}
 
-	logTrace("start generating Android manifest file ...")
-	if err := addAndroidManifestFile(opts.pluginBaseDir(), manifestBuf.Bytes(), opts.BackupExtension); err != nil {
-		return err
+		logTrace("start generating Android manifest file to %s ...", baseDir)
+		if err := addAndroidManifestFile(baseDir, manifestBuf.Bytes(), opts.BackupExtension); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func main() {
-	if _, err := flags.ParseArgs(&opts, os.Args); err != nil {
+	args, err := flags.ParseArgs(&opts, os.Args)
+	if err != nil {
 		return
 	}
 
-	if err := main1(); err != nil {
+	if len(args) <= 1 {
+		args = []string{"."}
+	} else {
+		args = args[1:]
+	}
+
+	if err := main1(args); err != nil {
 		logError(err.Error())
 		return
 	}
