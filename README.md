@@ -1,22 +1,26 @@
-# upack: Transport Android Plugin for Unity
+# upack: 将 Android 工程集成到 Unity 中的辅助工具
 
-## Quick Start
+## 快速开始
 
-Install with `go` command:
+使用 `go` 命令安装：
 
 ```bash
-go get -u github.com/zhiruili/upack@latest
+go install github.com/zhiruili/upack@latest
 ```
 
-Compile Android module as AAR and extract it to Unity project:
+编译 Android 模块并拷贝到 Unity 工程中：
 
 ```bash
 # build Android module under ./AndroidProject and extra AAR to ./UnityProject/Assets/Plugins/Android
 upack -m mymodule -a ./AndroidProject -e com.example.mymodule.MainActivity ./UnityProject/Assets/Plugins/Android
 ```
 
-Show help with `--help` argument:
+通过 `--help` 参数来显示帮助信息：
 
 ```bash
 upack --help
 ```
+
+## 示例工程
+
+参考：[UnityAndroidExample](https://github.com/ZhiruiLi/UnityAndroidExample)。
