@@ -16,6 +16,8 @@ import (
 	"github.com/jessevdk/go-flags"
 )
 
+var sep = string(filepath.Separator)
+
 type options struct {
 	// Slice of bool will append 'true' each time the option is encountered (can be set multiple times, like -vvv)
 	Verbose                 []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
@@ -254,7 +256,60 @@ func addAndroidManifestFile(dir string, content []byte, backupExt string) error 
 	return backupAndWriteFile(path, content, backupExt)
 }
 
-func unzip(srcFile, dstDir string) error {
+func zipDir(srcDir, dstFile string, needZip func(string) bool) error {
+	logDebug("zipping dir %s to %s", srcDir, dstFile)
+	outFile, err := os.Create(dstFile)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	w := zip.NewWriter(outFile)
+	defer w.Close()
+	return addZipFiles(w, srcDir, "", needZip)
+}
+
+func addZipFiles(w *zip.Writer, srcDir, baseInZip string, needZip func(string) bool) error {
+	files, err := ioutil.ReadDir(srcDir)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		var relPath = filepath.Join(baseInZip, file.Name())
+		if !needZip(relPath) {
+			logDebug("ignore path %s", relPath)
+			continue
+		}
+
+		if !file.IsDir() {
+			var fullPath = filepath.Join(srcDir, file.Name())
+			logTrace("zipping file %s", fullPath)
+			bs, err := ioutil.ReadFile(fullPath)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			f, err := w.Create(relPath)
+			if err != nil {
+				return fmt.Errorf("create %s in zip: %w", fullPath, err)
+			}
+
+			_, err = f.Write(bs)
+			if err != nil {
+				return fmt.Errorf("write %s to zip: %w", fullPath, err)
+			}
+		} else if file.IsDir() {
+			newSrc := filepath.Join(srcDir, file.Name())
+			newBase := filepath.Join(baseInZip, file.Name())
+			logTrace("recursive zipping files in dir %s", newSrc)
+			addZipFiles(w, newSrc, newBase, needZip)
+		}
+	}
+	return nil
+}
+
+func unzipFile(srcFile, dstDir string) error {
 	archive, err := zip.OpenReader(srcFile)
 	if err != nil {
 		panic(err)
@@ -318,7 +373,14 @@ func cleanAndUnzipFile(srcFile, dstDir string, backupExt string) error {
 	if err := removeOrBackup(dstDir, backupExt); err != nil {
 		return err
 	}
-	return unzip(srcFile, dstDir)
+	return unzipFile(srcFile, dstDir)
+}
+
+func cleanAndZipDir(srcDir, dstFile string, backupExt string, fileFilter func(string) bool) error {
+	if err := removeOrBackup(dstFile, backupExt); err != nil {
+		return err
+	}
+	return zipDir(srcDir, dstFile, fileFilter)
 }
 
 func main1(args []string) error {
@@ -371,6 +433,23 @@ func main1(args []string) error {
 
 		logTrace("start unzipping aar to %s ...", plugDir)
 		if err := cleanAndUnzipFile(opts.moduleAarFile(), plugDir, opts.BackupExtension); err != nil {
+			return err
+		}
+
+		jarFile := filepath.Join(plugDir, "classes.jar")
+		jarOutDir := filepath.Join(plugDir, "classes_unzip_tmp")
+		logTrace("start removing unity libs in %s ...", jarFile)
+		if err := cleanAndUnzipFile(jarFile, jarOutDir, ""); err != nil {
+			return err
+		}
+
+		if err := cleanAndZipDir(jarOutDir, jarFile, "", func(path string) bool {
+			return !strings.Contains(path, "unity3d")
+		}); err != nil {
+			return err
+		}
+
+		if err := removeOrBackup(jarOutDir, ""); err != nil {
 			return err
 		}
 
