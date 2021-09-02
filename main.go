@@ -278,7 +278,7 @@ func addZipFiles(w *zip.Writer, srcDir, baseInZip string, needZip func(string) b
 	for _, file := range files {
 		var relPath = filepath.Join(baseInZip, file.Name())
 		if !needZip(relPath) {
-			logDebug("ignore path %s", relPath)
+			logDebug("ignore %s when zipping", relPath)
 			continue
 		}
 
@@ -444,7 +444,7 @@ func main1(args []string) error {
 		}
 
 		if err := cleanAndZipDir(jarOutDir, jarFile, "", func(path string) bool {
-			return !strings.Contains(path, "unity3d")
+			return !strings.Contains(path, "UnityPlayerActivity.class")
 		}); err != nil {
 			return err
 		}
