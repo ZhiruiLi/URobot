@@ -20,14 +20,15 @@ var sep = string(filepath.Separator)
 
 type options struct {
 	// Slice of bool will append 'true' each time the option is encountered (can be set multiple times, like -vvv)
-	Verbose                 []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
-	AndroidModuleName       string   `short:"m" long:"android-module-name" env:"UPACK_ANDROID_MODULE_NAME" description:"Android module name" required:"true"`
-	AndroidProjectPath      string   `short:"a" long:"android-path" env:"UPACK_ANDROID_PROJECT_PATH" description:"Android project path" required:"true"`
-	AndroidEntryActivity    string   `short:"e" long:"entry-activity" env:"UPACK_ENTRY_ACTIVITY" description:"Full name of entry activity " required:"true"`
-	AndroidPermissions      []string `short:"p" long:"android-permissions" env:"UPACK_ANDROID_PERMISSIONS" description:"Acquire permissions in Android manifest" required:"false"`
-	AndroidRemoveJarContent []string `short:"r" long:"android-remove-jar-content" env:"UPACK_ANDROID_REMOVE_JAR_CONTENT" description:"Remove content from Jar file" required:"false"`
-	AndroidManifestTemplate string   `short:"T" long:"manifest-template" env:"UPACK_MANIFEST_TEMPLATE" description:"Android manifest template file path" required:"false"`
-	BackupExtension         string   `short:"B" long:"backup-extension" env:"UPACK_BACKUP_EXTENSION" description:"Keep the original files with the given ext name" required:"false"`
+	Verbose                   []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
+	AndroidModuleName         string   `short:"m" long:"android-module-name" env:"UPACK_ANDROID_MODULE_NAME" description:"Android module name" required:"true"`
+	AndroidProjectPath        string   `short:"a" long:"android-path" env:"UPACK_ANDROID_PROJECT_PATH" description:"Android project path" required:"true"`
+	AndroidEntryActivity      string   `short:"e" long:"entry-activity" env:"UPACK_ENTRY_ACTIVITY" description:"Full name of entry activity " required:"true"`
+	AndroidPermissions        []string `short:"p" long:"android-permissions" env:"UPACK_ANDROID_PERMISSIONS" description:"Acquire permissions in Android manifest" required:"false"`
+	AndroidActivityAttributes []string `short:"t" long:"android-activity-attributes" env:"UPACK_ANDROID_ACTIVITY_ATTRIBUTES" description:"Additional activity attributes in Android manifest" required:"false"`
+	AndroidRemoveJarContent   []string `short:"r" long:"android-remove-jar-content" env:"UPACK_ANDROID_REMOVE_JAR_CONTENT" description:"Remove content from Jar file" required:"false"`
+	AndroidManifestTemplate   string   `short:"T" long:"manifest-template" env:"UPACK_MANIFEST_TEMPLATE" description:"Android manifest template file path" required:"false"`
+	BackupExtension           string   `short:"B" long:"backup-extension" env:"UPACK_BACKUP_EXTENSION" description:"Keep the original files with the given ext name" required:"false"`
 }
 
 var opts options
@@ -217,6 +218,9 @@ const defaultManifestTemplate string = `<?xml version="1.0" encoding="utf-8"?>
         android:theme="@style/UnityThemeSelector"
         android:icon="@drawable/app_icon"
         android:label="@string/app_name"
+{{range .AndroidActivityAttributes}}
+        {{.}}
+{{- end}}
         android:debuggable="true">
         <activity android:name="{{.AndroidEntryActivity}}"
                   android:label="@string/app_name">
