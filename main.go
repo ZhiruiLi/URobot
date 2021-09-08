@@ -25,6 +25,7 @@ type options struct {
 	AndroidProjectPath      string   `short:"a" long:"android-path" env:"UPACK_ANDROID_PROJECT_PATH" description:"Android project path" required:"true"`
 	AndroidEntryActivity    string   `short:"e" long:"entry-activity" env:"UPACK_ENTRY_ACTIVITY" description:"Full name of entry activity " required:"true"`
 	AndroidPermissions      []string `short:"p" long:"android-permissions" env:"UPACK_ANDROID_PERMISSIONS" description:"Acquire permissions in Android manifest" required:"false"`
+	AndroidRemoveJarContent []string `short:"r" long:"android-remove-jar-content" env:"UPACK_ANDROID_REMOVE_JAR_CONTENT" description:"Remove content from Jar file" required:"false"`
 	AndroidManifestTemplate string   `short:"T" long:"manifest-template" env:"UPACK_MANIFEST_TEMPLATE" description:"Android manifest template file path" required:"false"`
 	BackupExtension         string   `short:"B" long:"backup-extension" env:"UPACK_BACKUP_EXTENSION" description:"Keep the original files with the given ext name" required:"false"`
 }
@@ -436,21 +437,28 @@ func main1(args []string) error {
 			return err
 		}
 
-		jarFile := filepath.Join(plugDir, "classes.jar")
-		jarOutDir := filepath.Join(plugDir, "classes_unzip_tmp")
-		logTrace("start removing unity libs in %s ...", jarFile)
-		if err := cleanAndUnzipFile(jarFile, jarOutDir, ""); err != nil {
-			return err
-		}
+		if len(opts.AndroidRemoveJarContent) > 0 {
+			jarFile := filepath.Join(plugDir, "classes.jar")
+			jarOutDir := filepath.Join(plugDir, "classes_unzip_tmp")
+			logTrace("start removing unity libs in %s ...", jarFile)
+			if err := cleanAndUnzipFile(jarFile, jarOutDir, ""); err != nil {
+				return err
+			}
 
-		if err := cleanAndZipDir(jarOutDir, jarFile, "", func(path string) bool {
-			return !strings.Contains(path, "UnityPlayerActivity.class")
-		}); err != nil {
-			return err
-		}
+			if err := cleanAndZipDir(jarOutDir, jarFile, "", func(path string) bool {
+				for _, s := range opts.AndroidRemoveJarContent {
+					if strings.Contains(path, s) {
+						return false
+					}
+				}
+				return true
+			}); err != nil {
+				return err
+			}
 
-		if err := removeOrBackup(jarOutDir, ""); err != nil {
-			return err
+			if err := removeOrBackup(jarOutDir, ""); err != nil {
+				return err
+			}
 		}
 
 		logTrace("start generating properties file at %s ...", plugDir)
